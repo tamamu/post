@@ -1,0 +1,81 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  #+quicklisp (ql:quickload '(:alexandria :djula) :silent t)
+  )
+
+(defpackage :ros.script.post.3726278725
+  (:use :cl))
+(in-package :ros.script.post.3726278725)
+
+(defun parse-date (s)
+  (values (parse-integer s :start 0 :end 4)
+          (parse-integer s :start 4 :end 6)
+          (parse-integer s :start 6 :end 8)
+          (subseq s 9)))
+
+(defun file-timestamp (path)
+  (let ((raw (file-write-date path)))
+    (multiple-value-bind
+      (sec min hour date m y dow dst-p tz)
+      (decode-universal-time raw)
+      (declare (ignore dow dst-p tz))
+      (values raw
+              y
+              m
+              date
+              (format nil "~4,'0d-~2,'0d-~2,'0d ~2,'0d:~2,'0d:~2,'0d"
+                      y m date hour min sec)))))
+
+(defun read-page-source (path)
+  (let ((buf (alexandria:read-file-into-string path)))
+    (values (read-line (make-string-input-stream buf))
+            buf)))
+
+(defun make-index ()
+  (let ((index
+          (mapcar
+            (lambda (path)
+              (multiple-value-bind (raw y m d s)
+                (file-timestamp path)
+                (let ((dir (format nil "pages/~4,'0d/~2,'0d/~2,'0d/" y m d)))
+                  (ensure-directories-exist dir)
+                  (multiple-value-bind (title content)
+                    (read-page-source path)
+                    (declare (ignore content))
+                    (list :title title
+                          :base path
+                          :path (format nil "~A~A.html" dir (pathname-name path))
+                          :time raw
+                          :ts s)))))
+            (directory "./src/*.md"))))
+    (sort index #'> :key (lambda (x) (getf x :time)))))
+
+(defun main (&rest argv)
+  (declare (ignorable argv))
+  (djula:add-template-directory "./templates/")
+  (let ((+index.html+ (djula:compile-template* "index.html"))
+        (+page.html+ (djula:compile-template* "page.html")))
+    (with-open-file (out "index.html"
+                         :direction :output
+                         :if-exists :supersede)
+      (djula:render-template* +index.html+ out
+                              :pages (make-index)))
+    (loop for page in (make-index) do
+          (multiple-value-bind (title content)
+            (read-page-source (getf page :base))
+            (with-open-file (out (getf page :path)
+                                 :direction :output
+                                 :if-exists :supersede)
+              (djula:render-template* +page.html+ out
+                                      :title title
+                                      :content content
+                                      :ts (multiple-value-bind (raw y m d ts)
+                                            (file-timestamp (getf page :path))
+                                            (declare (ignore raw y m d))
+                                            ts)))))))
+;;; vim: set ft=lisp lisp:
