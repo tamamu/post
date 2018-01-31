@@ -1,9 +1,14 @@
+html {
+  font-size: 62.5%;
+}
+
 body {
   width: 100vw;
   min-height: 100vh;
   margin: 0;
   padding: 0;
   overflow-x: hidden;
+  font-size: 1.4rem;
 }
 section {
   font-family: "Sawarabi Mincho";
@@ -70,7 +75,7 @@ a.page-link:hover {
 a.page-link:after {
   content: attr(data-ts);
   margin-left: 1rem;
-  font-size: 0.5rem;
+  font-size: 0.8rem;
   background-color: #e0e0e0;
   color: #333;
 }
