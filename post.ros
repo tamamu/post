@@ -15,6 +15,7 @@ exec ros -Q -- $0 "$@"
 (djula:add-template-directory "./templates/")
 (defvar +index.html+ (djula:compile-template* "index.html"))
 (defvar +page.html+ (djula:compile-template* "page.html"))
+(defvar *regenerate* nil)
 
 (defun read-lock ()
   (let ((path (probe-file "post.lock")))
@@ -103,7 +104,7 @@ exec ros -Q -- $0 "$@"
                (let ((updated (update-page existence (parse-date update-at)))
                      (path (mount-path y m d filename)))
                  (if (probe-file path)
-                     (when updated
+                     (when (or updated *regenerate*)
                        (setf (gethash "update_at" info) updated
                              (gethash "title" info) (generate-page filename path updated)))
                      (setf (gethash "title" info) (generate-page filename path update-at))))
@@ -135,8 +136,13 @@ exec ros -Q -- $0 "$@"
   (with-open-file (out "post.lock" :direction :output :if-exists :supersede)
     (yason:encode lock out)))
 
+(defun proc-argument (arg)
+  (if (string= arg "regenerate")
+      (setf *regenerate* t)))
+
 (defun main (&rest argv)
   (declare (ignorable argv))
+  (mapcar #'proc-argument argv)
   (let ((lock (read-lock)))
     (ensure-lock lock)
     (update-lock lock)
