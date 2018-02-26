@@ -5,77 +5,141 @@ exec ros -Q -- $0 "$@"
 |#
 (progn ;;init forms
   (ros:ensure-asdf)
-  #+quicklisp (ql:quickload '(:alexandria :djula) :silent t)
+  #+quicklisp (ql:quickload '(:alexandria :yason :djula) :silent t)
   )
 
 (defpackage :ros.script.post.3726278725
   (:use :cl))
 (in-package :ros.script.post.3726278725)
 
-(defun parse-date (s)
-  (values (parse-integer s :start 0 :end 4)
-          (parse-integer s :start 4 :end 6)
-          (parse-integer s :start 6 :end 8)
-          (subseq s 9)))
+(djula:add-template-directory "./templates/")
+(defvar +index.html+ (djula:compile-template* "index.html"))
+(defvar +page.html+ (djula:compile-template* "page.html"))
+
+(defun read-lock ()
+  (let ((path (probe-file "post.lock")))
+    (if path
+        (yason:parse (alexandria:read-file-into-string path))
+        (make-hash-table :test #'equal))))
+
+(defun format-date (y m d hour min sec)
+  (format nil "~4,'0d-~2,'0d-~2,'0d ~2,'0d:~2,'0d:~2,'0d"
+          y m d hour min sec))
 
 (defun file-timestamp (path)
   (let ((raw (file-write-date path)))
     (multiple-value-bind
-      (sec min hour date m y dow dst-p tz)
+      (sec min hour d m y dow dst-p tz)
       (decode-universal-time raw)
       (declare (ignore dow dst-p tz))
       (values raw
               y
               m
-              date
-              (format nil "~4,'0d-~2,'0d-~2,'0d ~2,'0d:~2,'0d:~2,'0d"
-                      y m date hour min sec)))))
+              d
+              (format-date y m d hour min sec)))))
+
+(defun update-page (filename post-raw)
+  (multiple-value-bind (raw y m d string)
+    (file-timestamp filename)
+    (declare (ignore y m d))
+    (if (< post-raw raw)
+        (progn
+          (format t "Updated ~A.~%" filename)
+          string)
+        nil)))
+
+(defun parse-date (s)
+  (let ((y (parse-integer s :start 0 :end 4))
+        (m (parse-integer s :start 5 :end 7))
+        (d (parse-integer s :start 8 :end 10))
+        (hour (parse-integer s :start 11 :end 13))
+        (min (parse-integer s :start 14 :end 16))
+        (sec (parse-integer s :start 17 :end 19)))
+    (encode-universal-time sec min hour d m y)))
 
 (defun read-page-source (path)
   (let ((buf (alexandria:read-file-into-string path)))
     (values (read-line (make-string-input-stream buf))
             buf)))
 
-(defun make-index ()
-  (let ((index
-          (mapcar
-            (lambda (path)
-              (multiple-value-bind (raw y m d s)
-                (file-timestamp path)
-                (let ((dir (format nil "pages/~4,'0d/~2,'0d/~2,'0d/" y m d)))
-                  (ensure-directories-exist dir)
-                  (multiple-value-bind (title content)
-                    (read-page-source path)
-                    (declare (ignore content))
-                    (list :title title
-                          :base path
-                          :path (format nil "~A~A.html" dir (pathname-name path))
-                          :time raw
-                          :ts s)))))
-            (directory "./src/*.md"))))
-    (sort index #'> :key (lambda (x) (getf x :time)))))
+(defun mount-path (y m d filename)
+  (format nil "pages/~4,'0d/~2,'0d/~2,'0d/~A.html"
+          y m d (pathname-name filename)))
+
+(defun ensure-lock (lock)
+  (let ((raw (get-universal-time)))
+    (multiple-value-bind (sec min hour d m y dw dst-p tz)
+      (decode-universal-time raw)
+      (declare (ignore dw dst-p tz))
+      (mapcar
+        (lambda (filename)
+          (let ((info (gethash filename lock nil)))
+            (unless info
+              (setf info (make-hash-table :test #'equal)
+                    (gethash "post_at" info) (list y m d)
+                    (gethash "update_at" info) (format-date y m d hour min sec)
+                    (gethash filename lock) info))))
+        (mapcar #'file-namestring (directory "./src/*.md"))))))
+
+(defun generate-page (filename path ts)
+  (format t "Generated ~A.~%" path)
+  (ensure-directories-exist (directory-namestring path))
+  (multiple-value-bind (title content)
+    (read-page-source (format nil "./src/~A" filename))
+    (with-open-file (out path :direction :output :if-exists :supersede)
+      (djula:render-template* +page.html+ out
+                              :title title
+                              :content content
+                              :ts ts))
+    title))
+
+(defun update-lock (lock)
+  (loop for filename being each hash-key of lock
+        using (hash-value info)
+        for (y m d) = (gethash "post_at" info)
+        for update-at = (gethash "update_at" info)
+        for existence = (probe-file (format nil "./src/~A" filename))
+        do (if existence
+               (let ((updated (update-page existence (parse-date update-at)))
+                     (path (mount-path y m d filename)))
+                 (if (probe-file path)
+                     (when updated
+                       (setf (gethash "update_at" info) updated
+                             (gethash "title" info) (generate-page filename path updated)))
+                     (setf (gethash "title" info) (generate-page filename path update-at))))
+               (let ((path (mount-path y m d filename)))
+                 (format t "Removed ~A.~%" path)
+                 (delete-file (probe-file path))
+                 (remhash filename lock)))))
+
+(defun generate-index (lock)
+  (format t "Indexd.~%")
+  (let ((index (list)))
+    (loop for filename being each hash-key of lock
+          using (hash-value info)
+          for (y m d) = (gethash "post_at" info)
+          for ts = (gethash "update_at" info)
+          for update-at-raw = (parse-date ts)
+          for title = (gethash "title" info)
+          do (push (list :title title
+                         :path (mount-path y m d filename)
+                         :update-at update-at-raw
+                         :ts ts)
+                   index))
+    (setf index (sort index #'> :key (lambda (list) (getf list :update-at))))
+    (with-open-file (out "index.html" :direction :output :if-exists :supersede)
+      (djula:render-template* +index.html+ out
+                              :pages index))))
+
+(defun save-lock (lock)
+  (with-open-file (out "post.lock" :direction :output :if-exists :supersede)
+    (yason:encode lock out)))
 
 (defun main (&rest argv)
   (declare (ignorable argv))
-  (djula:add-template-directory "./templates/")
-  (let ((+index.html+ (djula:compile-template* "index.html"))
-        (+page.html+ (djula:compile-template* "page.html")))
-    (with-open-file (out "index.html"
-                         :direction :output
-                         :if-exists :supersede)
-      (djula:render-template* +index.html+ out
-                              :pages (make-index)))
-    (loop for page in (make-index) do
-          (multiple-value-bind (title content)
-            (read-page-source (getf page :base))
-            (with-open-file (out (getf page :path)
-                                 :direction :output
-                                 :if-exists :supersede)
-              (djula:render-template* +page.html+ out
-                                      :title title
-                                      :content content
-                                      :ts (multiple-value-bind (raw y m d ts)
-                                            (file-timestamp (getf page :path))
-                                            (declare (ignore raw y m d))
-                                            ts)))))))
+  (let ((lock (read-lock)))
+    (ensure-lock lock)
+    (update-lock lock)
+    (generate-index lock)
+    (save-lock lock)))
 ;;; vim: set ft=lisp lisp:
