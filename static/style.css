@@ -1,5 +1,4 @@
 html {
-  font-size: 62.5%;
 }
 
 body {
@@ -8,7 +7,6 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  font-size: 1.4rem;
 }
 section {
   font-family: "Sawarabi Mincho";
@@ -22,8 +20,8 @@ h1, h2, h3, h4, h5, h6 {
   font-family: "Sawarabi Gothic";
 }
 code {
-  font-size: 0.85rem;
-  font-family: monospace;
+  font-size: 1rem;
+  font-family: "Inconsolata", monospace;
   background-color: #2b303b;
   color: #c0c5ce;
   padding: 2px;
