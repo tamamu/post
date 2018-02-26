@@ -91,6 +91,7 @@ exec ros -Q -- $0 "$@"
       (djula:render-template* +page.html+ out
                               :title title
                               :content content
+                              :path path
                               :ts ts))
     title))
 
