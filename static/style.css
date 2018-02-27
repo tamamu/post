@@ -77,4 +77,6 @@ a.page-link:after {
   background-color: #e0e0e0;
   color: #333;
 }
-
+#main-content {
+  visibility: hidden;
+}
