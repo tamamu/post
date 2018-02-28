@@ -77,6 +77,13 @@ a.page-link:after {
   background-color: #e0e0e0;
   color: #333;
 }
+
+
+blockquote {
+  padding-left: 1em;
+  border-left: 4px solid orange;
+}
+
 #main-content {
   visibility: hidden;
 }
