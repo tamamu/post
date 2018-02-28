@@ -26,7 +26,7 @@
     </div>
   </header>
   <section>
-    <div id="main-content">{{ content }}</div>
+    <div id="main-content">{{ content | safe }}</div>
     <p>{{ ts }}</p>
     <a class="twitter-share-button"
       href="https://twitter.com/share"
