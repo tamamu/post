@@ -7,6 +7,13 @@ class PageRenderer {
         case 'latex':
           return this.renderLaTeX(code, true);
           break;
+        case 'raw':
+          let result = document.createElement('div');
+          result.style.display = "flex";
+          result.style.justifyContent = "center";
+          result.innerHTML = code;
+          return result.outerHTML;
+          break;
         case undefined:
           {
             let result = hljs.highlightAuto(code);
@@ -32,7 +39,7 @@ class PageRenderer {
   }
 
   render(string) {
-    return marked(string, {breaks: true, renderer: this.marked});
+    return marked(string, {gfm: true, breaks: true, renderer: this.marked});
   }
 
   renderCode(lang, value) {
